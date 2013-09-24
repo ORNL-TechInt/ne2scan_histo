@@ -31,6 +31,22 @@ BIN_DAYS = [1.0, 5.0, 7.0, 14.0, 30.0, 60.0, 90.0]
 EMPTY_HISTO_DATA = [0, 0, 0, 0, 0, 0, 0, 0]
 # ----------------------------------------------------------------------------
 
+def memoize(fn):
+    cached_results = {}
+    
+    def memoized( *args):
+        try:
+            return cached_results[args]
+        except KeyError:
+            # no cached result - calculate it for real
+            result = fn(*args)
+            
+            if result != None:
+                # don't store a None in the cache
+                cached_results[args] = result
+            return result
+    return memoized
+            
 
 
 class HistoTree(object):
@@ -77,41 +93,67 @@ class HistoTree(object):
                 node.add_child( new_node)
             node = new_node
     
+#    @memoize
+#    def find(self, full_path_name):
+#        '''
+#        Returns a reference to the HistoNode for the specified path (or
+#        None if the path doesn't exist)
+#        '''
+#        
+#        # split full path into its elements (each element is one level
+#        # in the tree)
+#        dirs = full_path_name.split( os.sep)
+#        # the first element in dirs should be '.' and the second should be
+#        # 'ROOT'.  Skip them.
+#        if dirs[0] != '.' or \
+#           dirs[1] != 'ROOT':
+#            raise self.InvalidPathError( full_path_name)
+#        
+#        dirs = dirs[2:]
+#        
+#        node = self._root
+#        for one_dir in dirs:
+#            new_node = node.get_child( one_dir)
+#            if new_node == None:
+#                return None
+#            else:
+#                node = new_node
+#        return node
+
+    @memoize
     def find(self, full_path_name):
         '''
         Returns a reference to the HistoNode for the specified path (or
         None if the path doesn't exist)
-        '''
         
-        # split full path into its elements (each element is one level
-        # in the tree)
-        dirs = full_path_name.split( os.sep)
-        # the first element in dirs should be '.' and the second should be
-        # 'ROOT'.  Skip them.
-        if dirs[0] != '.' or \
-           dirs[1] != 'ROOT':
+        This is a recursive implementation (which makes better use of
+        the memoized results than the non-recursive implementation)
+        '''       
+        (dir_path, last_part) = os.path.split( full_path_name)
+        
+        if dir_path == "./ROOT":
+            return self._root.get_child(last_part)
+        elif dir_path == "":
             raise self.InvalidPathError( full_path_name)
-        
-        dirs = dirs[2:]
-        
-        node = self._root
-        for one_dir in dirs:
-            new_node = node.get_child( one_dir)
-            if new_node == None:
+        else:
+            parent_node = self.find(dir_path)
+            if parent_node == None:
                 return None
             else:
-                node = new_node
-        return node
+                return parent_node.get_child( last_part)
         
         
         
     def increment(self, full_path_name, age):
         '''
-        Increments the appropriate bin for the specified node  AND ALL OF ITS
-        PARENTS!
+        Increments the appropriate bin for the specified node
         
         Age is specified in days
-        '''
+        '''        
+            
+        node = self.find(full_path_name)
+        if (node == None):
+            raise self.InvalidPathError( full_path_name)
         
         bin_num = 0;
         for days in BIN_DAYS:
@@ -119,14 +161,8 @@ class HistoTree(object):
                 bin_num += 1
             else:
                 break
-            
-        node = self.find(full_path_name)
-        if (node == None):
-            raise self.InvalidPathError( full_path_name)
-        
-        while node != None:
-            node.data[ bin_num] += 1
-            node = node.parent
+ 
+        node.data[bin_num] += 1
         
     def full_path_name(self, node):
         '''
@@ -159,9 +195,19 @@ class HistoTree(object):
             return (None, None)
         
         node = self._traverse_nodes.pop(0)
-        self._traverse_nodes.extend( sorted( node.children, key=lambda node: node.name))   
+        child_keys = node.children.keys()
+        child_keys.sort()
+        for key in child_keys:
+            self._traverse_nodes.append(node.children[key])
+           
         return (self.full_path_name( node), node.data)
     
+    def summarize_histo_data(self):
+        '''
+        Walk the tree (depth-first), adding each child's histogram values to its parent's values
+        '''
+        self._root.summarize_histo_data()
+
     
     # exception raised when a bad path is passed to insert()   
     class InvalidPathError( Exception):
@@ -176,7 +222,8 @@ class HistoTree(object):
         # data is a list initialized from EMPTY_HISTO_DATA above..
         
         def __init__(self, name, parent):
-            self.children = []
+            self.children = {}  # The keys will be the children's names,
+                                # values are referenecs to HistoNodes
             
             # Can't just assign to data to EMPTY_HISTO_DATA or else
             # every HistNode will have a reference to the same object!
@@ -191,16 +238,25 @@ class HistoTree(object):
             Returns a reference to a HistoNode object with the specified name,
             or None if the name wasn't found.
             '''
-            for child in self.children:
-                if child.name == name:
-                    return child
+            return self.children.get(name) # returns None if name doesn't exist
             
-            # If we got here, the child wasn't found
-            return None
                 
         def add_child(self, child):
-            self.children.append( child)
-        
+            self.children[child.name] = child
+            # TODO: should we check to ensure we aren't overwriting an
+            # existing child?
+            
+        def summarize_histo_data(self):
+            '''
+            Adds the histogram data from all child nodes to the current node
+            '''
+            for child in self.children.values():
+                child.summarize_histo_data()
+                
+                for i in range( len( self.data)):
+                    self.data[i] += child.data[i]
+            
+            
              
 
 def main():
@@ -255,8 +311,14 @@ def main():
 
         line = infile.readline()
     
-    # Done reading in our data - now output it in CSV format
+    # Done reading in our data - at this point, the histogram values for
+    # each directory only count files in that directory.  What we want is
+    # for them to include files in the directory and all the child
+    #directories
+    tree.summarize_histo_data()
     
+     
+    # Now write the output in CSV format
     out = "Directory"
     for item in BIN_LABELS:
         out += ", %s"% item
