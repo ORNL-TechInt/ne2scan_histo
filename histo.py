@@ -281,42 +281,44 @@ def main():
         outfile = sys.stdout
     
     tree = HistoTree()
-
+    
     first_line = infile.readline()
     scan_time = int(first_line.split('|')[3]) # the time the scan was run
         
     # Read lines from stdin, parse them & add them to the tree
     infile.readline()  # we don't care bout the 2nd line in the file 
     line = infile.readline()
+    line_no = 3;  # line counter.  Useful for debugging corrupt input files
     while line[0:10] != "#complete#":
         parts = line.split('|')
         
         # We only care about files (not directories) and the name must start
         # with "./ROOT" (field 8 contains OST ID's if it's a file, and is 
         # empty for directories)
-        if len(parts[8]) > 0 and parts[9][0:6] == './ROOT':
-  
-            # Get the most recent of atime, ctime & mtime
-            file_time = max( int(parts[0]), int(parts[1]), int(parts[2]))
-            age = (scan_time - file_time) / 86400.0  # age is in days
-            
-            (dir_path, filename) = os.path.split( parts[9])
-            try:
-                tree.increment(dir_path, age)
-            except HistoTree.InvalidPathError:
-                # if we get one of these, it's because we haven't inserted
-                # a node for this directory yet
-                tree.insert( dir_path)
-                tree.increment(dir_path, age)  
-
+        try:
+            if len(parts[8]) > 0 and parts[9][0:6] == './ROOT':
+      
+                # Get the most recent of atime, ctime & mtime
+                file_time = max( int(parts[0]), int(parts[1]), int(parts[2]))
+                age = (scan_time - file_time) / 86400.0  # age is in days
+                
+                (dir_path, filename) = os.path.split( parts[9])
+                try:
+                    tree.increment(dir_path, age)
+                except HistoTree.InvalidPathError:
+                    # if we get one of these, it's because we haven't inserted
+                    # a node for this directory yet
+                    tree.insert( dir_path)
+                    tree.increment(dir_path, age)  
+        except IndexError, ex:
+            sys.stderr.write( "Error parsing line %d: %s\n"%(line_no, ex.message))
         line = infile.readline()
+        line_no += 1
     
-    # Done reading in our data - at this point, the histogram values for
-    # each directory only count files in that directory.  What we want is
-    # for them to include files in the directory and all the child
-    #directories
+    # Done reading in our data.  At this point, the histogram values for each
+    # directory only count files in that directory.  What we want is for them
+    # to include files in the directory and all the child directories
     tree.summarize_histo_data()
-    
      
     # Now write the output in CSV format
     out = "Directory"
