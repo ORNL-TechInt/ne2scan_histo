@@ -300,6 +300,11 @@ def main():
       
                 # Get the most recent of atime, ctime & mtime
                 file_time = max( int(parts[0]), int(parts[1]), int(parts[2]))
+                # Because ne2scan takes so long, it's possible that files might
+                # be updated after the scan has started but before the scan
+                # reaches them.  That would result in a negative age. This
+                # isn't really a problem since all we do is a 'less than'
+                # but it's worth pointing out.
                 age = (scan_time - file_time) / 86400.0  # age is in days
                 
                 (dir_path, filename) = os.path.split( parts[9])
