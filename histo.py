@@ -9,6 +9,7 @@ containing file age data in a format suitable for generating histograms
 easily in a spreadsheet program.
 '''
 
+import collections
 import sys
 import os
 import argparse
@@ -59,7 +60,7 @@ class HistoTree(object):
     def __init__(self):
         
         # These should all be references to HistoNode objects
-        self._traverse_nodes = []   # Used to keep track of where we are in 
+        self._traverse_nodes = collections.deque() #[]   # Used to keep track of where we are in 
                                     # the traverse operation
         # Initialize the top node of the tree
         self._root = self.HistoNode('ROOT', None)
@@ -194,7 +195,7 @@ class HistoTree(object):
             # Empty node list means the traverse is done (or was never started)
             return (None, None)
         
-        node = self._traverse_nodes.pop(0)
+        node = self._traverse_nodes.popleft()
         child_keys = node.children.keys()
         child_keys.sort()
         for key in child_keys:
@@ -346,4 +347,14 @@ def main():
     
 
 if __name__ == '__main__':
-    main()
+    # Verify that we've at least got version 2.6
+    # (Older versions didn't have the message field in their exception
+    # classes.)
+    if sys.hexversion >= 0x02060000:
+        main()
+    else:
+        sys.stderr.write( 'Python interpreter is too old.  This script requires at least v2.6\n')
+        sys.stderr.write( 'Python version string:\n')
+        sys.stderr.write( sys.version)
+        sys.stderr.write( '\n')
+        
